@@ -6,4 +6,4 @@ Crawler que armazena informações da plataforma VivaReal no indexador ElasticSe
 2. node puppeteer.js
 3. Inicializar Elastic Search (Kibana opcional)
 4. Testes de conexão em ping.js e client.js
-5. node index.js
+5. node index.js -> Armazenamento no ElasticSearch
