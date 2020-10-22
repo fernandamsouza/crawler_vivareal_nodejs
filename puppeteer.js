@@ -1,21 +1,32 @@
 const { SSL_OP_EPHEMERAL_RSA } = require('constants');
 const puppeteer = require('puppeteer');
+const Apify = require('apify'); // generate random user agents
+const randomUA = require('modern-random-ua'); // generate random user agents 
+
 // const cheerio =  require("cheerio");
 var fs = require('fs');
 var readline = require('readline-sync');
+var rotation = require('./rotation');
+
+
+const options = {
+  method: "GET",
+  proxy: rotation.proxyGenerator(),
+  headers: { 'User-Agent': 'Mozilla/5.0' }
+};
 
 
 // Função que clica e espera a abertura de nova aba
 let clickAndWaitForTarget = async (clickSelector, page, browser) => {
   const pageTarget = page.target();
   await page.click(clickSelector);
-  const newTarget = await browser.waitForTarget(target => target.opener() === pageTarget);
+  const newTarget = await browser.waitForTarget(target => target.opener() === pageTarget, options);
   const newPage = await newTarget.page();
 
   newPage.setViewport({
-   width: 1920,
-   height: 1080,
-   isMobile: false
+    width: 1920 + Math.floor(Math.random() * 100),
+    height: 1080 + Math.floor(Math.random() * 100),
+    isMobile: false
   });
   await newPage.waitForSelector("body");
   return newPage;
@@ -26,15 +37,17 @@ async function vivareal_crawler(nomeBairro, nomeCidade, readline) {
     var list = [];
     const bairro = nomeBairro;
     const cidade = nomeCidade;
-    const browser = await puppeteer.launch({headless: false});
+    // VivaReal não precisa de SlowMo
+    const browser = await Apify.launchPuppeteer({headless: false, userAgent: randomUA.generate()});
     const page = await browser.newPage();
+    //await page.setUserAgent(randomUA.get();
 
     page.setViewport({
     width: 1920,
     height: 1080,
     isMobile: false
     });
-    await page.goto("https://www.vivareal.com.br/", {waitUntil: 'networkidle2'});
+    await page.goto("https://www.vivareal.com.br/", {waitUntil: 'networkidle2'}, options);
       // Filtragem para modo de imovel. A princípio -> Alugar
       await page.click('.js-select-business');
       await page.keyboard.press('ArrowDown');
@@ -73,12 +86,12 @@ async function vivareal_crawler(nomeBairro, nomeCidade, readline) {
 
       // Parseia o numero de imoveis
       total_imoveis = total_imoveis.replace(/\D/g,'');
-      total_imoveis= parseInt(total_imoveis,10);
+      total_imoveis = parseInt(total_imoveis,10);
       console.log("Número de imóveis disponíveis em " + bairro + ": " + total_imoveis);
 
       // Calcula o numero de páginas totais
       n_pag_total = Math.floor(total_imoveis/35);
-      n_imov_ultima=total_imoveis%35;
+      n_imov_ultima = total_imoveis%35;
       if (n_imov_ultima != 0) {
           n_pag_total++;
       }
@@ -103,6 +116,10 @@ async function vivareal_crawler(nomeBairro, nomeCidade, readline) {
         page2 = await clickAndWaitForTarget('div[data-index="'+ i +'"]> .property-card__container > .property-card__main-info', page, browser);
         // Foco na página do anúncio
         await page2.bringToFront();
+        const url = page2.url();
+        const cookies = await page2.cookies(url);
+        // And remove them
+        await page2.deleteCookie(...cookies);
         let el = await page2.evaluate(() => {
           // Coleta do título do anúncio
           let titulo = document.querySelector('div[class="title__content-wrapper"] > h1').innerText;
@@ -162,7 +179,6 @@ async function vivareal_crawler(nomeBairro, nomeCidade, readline) {
           //const conteudoTotal = $('#js-site-main > div.hero.js-hero > div.hero__actions.js-actions > button > span').text();
           // const numero_imagens = returnMatches(conteudoTotal, /\d+/);
           // console.log(numero_imagens);
-
           // Coleta do link das imagens
           const listaIbagens = [];
           const ibagens = await page.$$eval('img[src^="https://resize"]', aTags => aTags.map(a => a.getAttribute("src")));
@@ -183,6 +199,7 @@ async function vivareal_crawler(nomeBairro, nomeCidade, readline) {
 
       const pagina = 'VivaReal';
       el = Object.assign({'pagina': pagina,
+                          'url': url,
                         'bairro': bairro,
                         'id': j,
                         'url_imagens': listaIbagens}, el);
